@@ -52,12 +52,29 @@ impl FrameDecoder {
         self.cap.get(videoio::CAP_PROP_FRAME_HEIGHT).unwrap_or(0.0) as u32
     }
 
+    /// Returns the total duration of the video in seconds.
+    pub fn duration(&self) -> f64 {
+        let frame_count = self.cap.get(videoio::CAP_PROP_FRAME_COUNT).unwrap_or(0.0);
+        let fps = self.get_fps();
+        if fps > 0.0 {
+            frame_count / fps
+        } else {
+            0.0
+        }
+    }
+
     /// Reads the next frame from the video and returns it as a ColorImage.
     /// Returns `Ok(None)` if the end of the video is reached.
-    pub fn read_next_frame(&mut self) -> Result<Option<egui::ColorImage>, VideoReaderError> {
+    // e.g., -> Result<Option<(egui::ColorImage, f64)>, VideoReaderError>
+    // タイムスタンプは self.cap.get(videoio::CAP_PROP_POS_MSEC)? で取得
+    pub fn read_next_frame(
+        &mut self,
+    ) -> Result<Option<(egui::ColorImage, f64)>, VideoReaderError> {
         let mut frame = core::Mat::default();
         match self.cap.read(&mut frame) {
             Ok(true) if !frame.empty() => {
+                let timestamp_ms = self.cap.get(videoio::CAP_PROP_POS_MSEC).unwrap_or(0.0);
+
                 // Convert from OpenCV's BGR format to egui's RGB format.
                 let mut rgb_frame = core::Mat::default();
                 imgproc::cvt_color(
@@ -82,7 +99,7 @@ impl FrameDecoder {
                 let color_image =
                     egui::ColorImage::from_rgb([size.width as usize, size.height as usize], data);
 
-                Ok(Some(color_image))
+                Ok(Some((color_image, timestamp_ms)))
             }
             // End of video or read error
             _ => Ok(None),
@@ -95,6 +112,7 @@ pub struct VideoReader {
     _thread_handle: thread::JoinHandle<()>,
     pub width: u32,
     pub height: u32,
+    pub duration: f64,
 }
 
 impl VideoReader {
@@ -110,7 +128,7 @@ impl VideoReader {
     /// * `Err(VideoReaderError)` - If opening the video file fails.
     pub fn new(
         path: &Path,
-        image_sender: mpsc::Sender<Result<egui::ColorImage, VideoReaderError>>,
+        image_sender: mpsc::Sender<Result<(egui::ColorImage, f64), VideoReaderError>>,
         control_receiver: mpsc::Receiver<ControlCommand>,
     ) -> Result<Self, VideoReaderError> {
         let mut decoder = FrameDecoder::new(path)?;
@@ -118,6 +136,7 @@ impl VideoReader {
         let fps = decoder.get_fps();
         let width = decoder.width();
         let height = decoder.height();
+        let duration = decoder.duration();
         let delay_ms = if fps > 0.0 { (1000.0 / fps) as u64 } else { 33 };
 
         let thread_handle = thread::spawn(move || {
@@ -125,6 +144,8 @@ impl VideoReader {
 
             loop {
                 // Check for control commands from the UI thread.
+                // TODO: ここに ControlCommand::Seek(ms) のハンドリングを追加する
+                // シークコマンドを受け取ったら、decoder.cap.set(videoio::CAP_PROP_POS_MSEC, ms) を呼び出す
                 match control_receiver.try_recv() {
                     Ok(ControlCommand::Play) => is_paused = false,
                     Ok(ControlCommand::Pause) => is_paused = true,
@@ -137,9 +158,9 @@ impl VideoReader {
 
                 if !is_paused {
                     match decoder.read_next_frame() {
-                        Ok(Some(color_image)) => {
+                        Ok(Some((color_image, timestamp_ms))) => {
                             // Send the converted image to the UI thread.
-                            if image_sender.send(Ok(color_image)).is_err() {
+                            if image_sender.send(Ok((color_image, timestamp_ms))).is_err() {
                                 // If sending fails, terminate the thread.
                                 break;
                             }
@@ -165,6 +186,7 @@ impl VideoReader {
             _thread_handle: thread_handle,
             width,
             height,
+            duration,
         })
     }
 
@@ -174,6 +196,10 @@ impl VideoReader {
 
     pub fn height(&self) -> u32 {
         self.height
+    }
+
+    pub fn duration(&self) -> f64 {
+        self.duration
     }
 }
 

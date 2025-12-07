@@ -20,16 +20,20 @@ enum PlaybackState {
 pub struct MyApp {
     // Manages the video reading thread.
     video_reader: Option<VideoReader>,
-    // Receiver for video frames.
-    image_receiver: mpsc::Receiver<Result<egui::ColorImage, VideoReaderError>>,
+    // Receiver for video frames and their timestamps.
+    image_receiver: mpsc::Receiver<Result<(egui::ColorImage, f64), VideoReaderError>>,
     // Sender for image data to be passed to the VideoReader.
-    image_sender: mpsc::Sender<Result<egui::ColorImage, VideoReaderError>>,
+    image_sender: mpsc::Sender<Result<(egui::ColorImage, f64), VideoReaderError>>,
     // Sender for control commands.
     control_sender: Option<mpsc::Sender<ControlCommand>>,
     // Texture to display on the screen.
     texture: Option<egui::TextureHandle>,
     // The current playback state.
     playback_state: PlaybackState,
+    // Total duration of the video in seconds.
+    video_duration: Option<f64>,
+    // Current playback time in seconds.
+    current_timestamp_s: f64,
 }
 
 impl Default for MyApp {
@@ -43,6 +47,8 @@ impl Default for MyApp {
             control_sender: None,
             texture: None,
             playback_state: PlaybackState::NotLoaded,
+            video_duration: None,
+            current_timestamp_s: 0.0,
         }
     }
 }
@@ -51,14 +57,15 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Check for a new frame from the background thread.
         match self.image_receiver.try_recv() {
-            // Received new image data.
-            Ok(Ok(color_image)) => {
+            // Received new image data and timestamp.
+            Ok(Ok((color_image, timestamp_ms))) => {
                 // Update the texture with the received image data.
                 self.texture = Some(ctx.load_texture(
                     "video_frame",
                     color_image,
                     egui::TextureOptions::LINEAR,
                 ));
+                self.current_timestamp_s = timestamp_ms / 1000.0;
             }
             // An error occurred during video processing.
             Ok(Err(VideoReaderError::OpenCV(msg))) => {
@@ -102,9 +109,11 @@ impl eframe::App for MyApp {
                         // Create a new video reader, reusing the image channel
                         match VideoReader::new(&path, self.image_sender.clone(), control_receiver) {
                             Ok(reader) => {
+                                self.video_duration = Some(reader.duration());
                                 self.video_reader = Some(reader);
                                 self.control_sender = Some(control_sender);
                                 self.playback_state = PlaybackState::Paused; // Start in paused state
+                                self.current_timestamp_s = 0.0; // Reset timestamp
                             }
                             Err(VideoReaderError::OpenCV(msg)) => {
                                 self.playback_state =
@@ -145,6 +154,16 @@ impl eframe::App for MyApp {
 
             ui.separator();
 
+            // Show timeline and seek bar
+            if let Some(duration) = self.video_duration {
+                ui.label(format!(
+                    "{} / {}",
+                    format_time(self.current_timestamp_s),
+                    format_time(duration)
+                ));
+                // TODO: ここに egui::Slider を追加する
+            }
+
             // Update the UI based on the current playback state.
             match &self.playback_state {
                 PlaybackState::Error(msg) => {
@@ -169,4 +188,11 @@ impl eframe::App for MyApp {
         // Constantly request UI redraws to keep the animation smooth.
         ctx.request_repaint();
     }
+}
+
+/// Formats seconds into a "MM:SS" string.
+fn format_time(seconds: f64) -> String {
+    let mins = (seconds / 60.0).floor();
+    let secs = (seconds % 60.0).floor();
+    format!("{:02}:{:02}", mins, secs)
 }
