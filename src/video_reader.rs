@@ -52,8 +52,14 @@ impl VideoReader {
                         // Convert from OpenCV's BGR format to egui's RGB format.
                         let mut rgb_frame = core::Mat::default();
 
-                        if imgproc::cvt_color(&frame, &mut rgb_frame, imgproc::COLOR_BGR2RGB, 0)
-                            .is_err()
+                        if imgproc::cvt_color(
+                            &frame,
+                            &mut rgb_frame,
+                            imgproc::COLOR_BGR2RGB,
+                            0,
+                            core::AlgorithmHint::ALGO_HINT_DEFAULT,
+                        )
+                        .is_err()
                         {
                             let err = VideoReaderError::OpenCV(
                                 "Failed to convert frame to RGB".to_string(),
