@@ -125,6 +125,15 @@ impl eframe::App for MyApp {
                         }
                         PlaybackState::Paused => {
                             if ui.button("Play").clicked() {
+                                if let Some(reader) = &self.video_reader {
+                                    // Add some vertical padding for the UI controls.
+                                    const UI_PADDING: f32 = 80.0;
+                                    let new_size = egui::Vec2::new(
+                                        reader.width() as f32,
+                                        reader.height() as f32 + UI_PADDING,
+                                    );
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(new_size));
+                                }
                                 let _ = sender.send(ControlCommand::Play);
                                 self.playback_state = PlaybackState::Playing;
                             }

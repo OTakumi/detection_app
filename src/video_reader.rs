@@ -42,6 +42,16 @@ impl FrameDecoder {
         self.cap.get(videoio::CAP_PROP_FPS).unwrap_or(30.0)
     }
 
+    /// Returns the width of the video frames.
+    pub fn width(&self) -> u32 {
+        self.cap.get(videoio::CAP_PROP_FRAME_WIDTH).unwrap_or(0.0) as u32
+    }
+
+    /// Returns the height of the video frames.
+    pub fn height(&self) -> u32 {
+        self.cap.get(videoio::CAP_PROP_FRAME_HEIGHT).unwrap_or(0.0) as u32
+    }
+
     /// Reads the next frame from the video and returns it as a ColorImage.
     /// Returns `Ok(None)` if the end of the video is reached.
     pub fn read_next_frame(&mut self) -> Result<Option<egui::ColorImage>, VideoReaderError> {
@@ -81,11 +91,23 @@ impl FrameDecoder {
 }
 
 pub struct VideoReader {
+    // Holds the handle of the spawned thread.
     _thread_handle: thread::JoinHandle<()>,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl VideoReader {
     /// Creates a new VideoReader and starts reading the video on a background thread.
+    ///
+    /// # Arguments
+    /// * `path` - The path to the video file to read.
+    /// * `image_sender` - The sender to send the read frames (`egui::ColorImage`) to the UI thread.
+    /// * `control_receiver` - The receiver for control commands from the UI thread.
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - If the thread was successfully started.
+    /// * `Err(VideoReaderError)` - If opening the video file fails.
     pub fn new(
         path: &Path,
         image_sender: mpsc::Sender<Result<egui::ColorImage, VideoReaderError>>,
@@ -94,6 +116,8 @@ impl VideoReader {
         let mut decoder = FrameDecoder::new(path)?;
 
         let fps = decoder.get_fps();
+        let width = decoder.width();
+        let height = decoder.height();
         let delay_ms = if fps > 0.0 { (1000.0 / fps) as u64 } else { 33 };
 
         let thread_handle = thread::spawn(move || {
@@ -132,13 +156,24 @@ impl VideoReader {
                     }
                 }
 
+                // Sleep for the calculated delay to reduce CPU usage, even when paused.
                 thread::sleep(std::time::Duration::from_millis(delay_ms));
             }
         });
 
         Ok(Self {
             _thread_handle: thread_handle,
+            width,
+            height,
         })
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
     }
 }
 
