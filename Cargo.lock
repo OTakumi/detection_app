@@ -951,6 +951,7 @@ dependencies = [
  "image",
  "opencv",
  "rfd",
+ "tempfile",
 ]
 
 [[package]]
