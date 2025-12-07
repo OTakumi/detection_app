@@ -144,11 +144,14 @@ impl VideoReader {
 
             loop {
                 // Check for control commands from the UI thread.
-                // TODO: ここに ControlCommand::Seek(ms) のハンドリングを追加する
-                // シークコマンドを受け取ったら、decoder.cap.set(videoio::CAP_PROP_POS_MSEC, ms) を呼び出す
                 match control_receiver.try_recv() {
                     Ok(ControlCommand::Play) => is_paused = false,
                     Ok(ControlCommand::Pause) => is_paused = true,
+                    Ok(ControlCommand::Seek(ms)) => {
+                        if decoder.cap.set(videoio::CAP_PROP_POS_MSEC, ms).is_err() {
+                            eprintln!("Seek failed to position {}ms", ms);
+                        }
+                    }
                     Err(mpsc::TryRecvError::Disconnected) => {
                         // UI thread has disconnected, terminate.
                         break;

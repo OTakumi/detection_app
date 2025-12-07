@@ -161,7 +161,13 @@ impl eframe::App for MyApp {
                     format_time(self.current_timestamp_s),
                     format_time(duration)
                 ));
-                // TODO: ここに egui::Slider を追加する
+                let slider = egui::Slider::new(&mut self.current_timestamp_s, 0.0..=duration)
+                    .show_value(false);
+                if ui.add(slider).changed() {
+                    if let Some(sender) = &self.control_sender {
+                        let _ = sender.send(ControlCommand::Seek(self.current_timestamp_s * 1000.0));
+                    }
+                }
             }
 
             // Update the UI based on the current playback state.
