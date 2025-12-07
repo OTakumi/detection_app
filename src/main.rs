@@ -1,4 +1,5 @@
 // Declare the new modules
+mod command;
 mod ui;
 mod video_reader;
 
