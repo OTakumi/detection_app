@@ -93,6 +93,9 @@ impl eframe::App for MyApp {
                         self.video_reader = None;
                         self.texture = None;
 
+                        // Drain any lingering frames from the channel
+                        while self.image_receiver.try_recv().is_ok() {}
+
                         // Create a new channel for control commands
                         let (control_sender, control_receiver) = mpsc::channel();
 
